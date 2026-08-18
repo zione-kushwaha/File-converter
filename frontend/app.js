@@ -23,7 +23,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const speckleSlider = document.getElementById('speckle-slider');
   const speckleVal = document.getElementById('speckle-val');
   const invertToggle = document.getElementById('invert-toggle');
+  
+  // CAD Geometry Controls
   const vectorMode = document.getElementById('vector-mode');
+  const orthoToggle = document.getElementById('ortho-toggle');
+  const minLenSlider = document.getElementById('min-len-slider');
+  const minLenVal = document.getElementById('min-len-val');
+  const cornerSnapSlider = document.getElementById('corner-snap-slider');
+  const cornerSnapVal = document.getElementById('corner-snap-val');
   const toleranceSlider = document.getElementById('tolerance-slider');
   const toleranceVal = document.getElementById('tolerance-val');
   const scaleSelect = document.getElementById('scale-select');
@@ -84,12 +91,27 @@ document.addEventListener('DOMContentLoaded', () => {
     triggerAutoProcess();
   });
 
+  if (minLenSlider) {
+    minLenSlider.addEventListener('input', (e) => {
+      minLenVal.textContent = `${e.target.value} px`;
+      triggerAutoProcess();
+    });
+  }
+
+  if (cornerSnapSlider) {
+    cornerSnapSlider.addEventListener('input', (e) => {
+      cornerSnapVal.textContent = `${e.target.value} px`;
+      triggerAutoProcess();
+    });
+  }
+
   toleranceSlider.addEventListener('input', (e) => {
     toleranceVal.textContent = e.target.value;
     triggerAutoProcess();
   });
 
   invertToggle.addEventListener('change', triggerAutoProcess);
+  if (orthoToggle) orthoToggle.addEventListener('change', triggerAutoProcess);
   vectorMode.addEventListener('change', triggerAutoProcess);
   scaleSelect.addEventListener('change', triggerAutoProcess);
 
@@ -157,19 +179,19 @@ document.addEventListener('DOMContentLoaded', () => {
     processImage();
   }
 
-  // Load a generated sample architectural blueprint with noise
+  // Load sample architectural blueprint with noise
   function loadSampleDrawing() {
     const canvas = document.createElement('canvas');
     canvas.width = 800;
     canvas.height = 600;
     const ctx = canvas.getContext('2d');
 
-    // White paper with slight scanner vignette
-    ctx.fillStyle = '#f3f4f6';
+    // Paper background
+    ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, 800, 600);
 
     // Draw architectural floor plan elements
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = '#0f172a';
     ctx.lineWidth = 3;
     ctx.lineCap = 'square';
 
@@ -178,35 +200,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Inner rooms
     ctx.beginPath();
-    // Vertical room divider
     ctx.moveTo(340, 80);
     ctx.lineTo(340, 520);
-    // Horizontal room divider
     ctx.moveTo(80, 300);
     ctx.lineTo(340, 300);
-    // Bathroom / Master bedroom divider
     ctx.moveTo(340, 260);
     ctx.lineTo(720, 260);
-    // Door gaps
-    ctx.moveTo(500, 260);
-    ctx.arc(500, 260, 40, 0, Math.PI / 2, false);
     ctx.stroke();
 
-    // Technical annotations / furniture blocks
+    // Fixtures
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(120, 120, 80, 100); // Table
-    ctx.beginPath();
-    ctx.arc(530, 400, 60, 0, Math.PI * 2); // Conference table
-    ctx.stroke();
+    ctx.strokeRect(120, 120, 80, 100);
+    ctx.strokeRect(500, 360, 140, 90);
 
-    // Add scanner speckle noise (salt-and-pepper)
+    // Add noise speckles
     const imgData = ctx.getImageData(0, 0, 800, 600);
     const data = imgData.data;
-    for (let i = 0; i < 4000; i++) {
+    for (let i = 0; i < 3000; i++) {
       const rx = Math.floor(Math.random() * 800);
       const ry = Math.floor(Math.random() * 600);
       const idx = (ry * 800 + rx) * 4;
-      const noise = Math.random() > 0.5 ? 40 : 220;
+      const noise = Math.random() > 0.5 ? 30 : 230;
       data[idx] = noise;
       data[idx + 1] = noise;
       data[idx + 2] = noise;
@@ -214,9 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.putImageData(imgData, 0, 0);
 
     canvas.toBlob((blob) => {
-      const sampleFile = new File([blob], 'architectural_sample_noisy.png', { type: 'image/png' });
+      const sampleFile = new File([blob], 'architectural_sample.png', { type: 'image/png' });
       handleFile(sampleFile);
-      showToast('Sample architectural drawing with scanner noise loaded!', 'success');
+      showToast('Sample architectural blueprint loaded!', 'success');
     }, 'image/png');
   }
 
@@ -237,6 +251,9 @@ document.addEventListener('DOMContentLoaded', () => {
     formData.append('speckle_size', speckleSlider.value);
     formData.append('approx_tolerance', toleranceSlider.value);
     formData.append('vector_mode', vectorMode.value);
+    formData.append('ortho_snap', orthoToggle ? orthoToggle.checked : true);
+    formData.append('min_line_len', minLenSlider ? minLenSlider.value : 12.0);
+    formData.append('corner_snap_radius', cornerSnapSlider ? cornerSnapSlider.value : 8.0);
     formData.append('scale', scaleSelect.value);
 
     try {
@@ -264,14 +281,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Update statistics
       updateStats({
-        status: 'Converted',
+        status: 'Clean CAD Generated',
         speckles: data.stats.noise_speckles_filtered,
         entities: data.stats.entity_count,
         nodes: data.stats.total_nodes,
         time: `${data.stats.processing_time_ms} ms`
       });
 
-      showToast('Successfully denoised & converted to CAD!', 'success');
+      showToast('Successfully generated clean editable CAD geometry!', 'success');
     } catch (err) {
       console.error(err);
       showToast(`Error: ${err.message}`, 'error');

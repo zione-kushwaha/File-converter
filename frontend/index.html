@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Convert images, blueprints, and sketches into clean AutoCAD DXF/DWG files with AI noise reduction and vectorization.">
-  <title>VectorCAD Studio - Image to DWG/DXF Converter with Noise Removal</title>
+  <meta name="description" content="Convert images, blueprints, and sketches into clean AutoCAD DXF/DWG files with AI noise reduction and smart geometry vectorization.">
+  <title>VectorCAD Studio - Image to DWG/DXF Converter & Geometric Regularizer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -76,7 +76,7 @@
               <span id="denoise-val" class="param-val">10</span>
             </div>
             <input type="range" id="denoise-slider" min="0" max="30" value="10" class="slider" />
-            <span class="control-help">Filters scanner paper texture & compression artifacts.</span>
+            <span class="control-help">Removes scanner paper texture and compression grain.</span>
           </div>
 
           <div class="control-group">
@@ -84,7 +84,7 @@
               <label for="threshold-mode">Binarization Method</label>
             </div>
             <select id="threshold-mode" class="select-input">
-              <option value="adaptive" selected>Adaptive Gaussian (Best for scans & uneven lighting)</option>
+              <option value="adaptive" selected>Adaptive Gaussian (Best for scans & shadows)</option>
               <option value="otsu">Otsu Automatic Global</option>
               <option value="manual">Manual Threshold</option>
             </select>
@@ -119,25 +119,51 @@
         <div class="panel-section">
           <h2 class="section-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
-            3. CAD Vectorization
+            3. Clean CAD Geometry
           </h2>
 
           <div class="control-group">
-            <label for="vector-mode">CAD Tracing Mode</label>
+            <label for="vector-mode">CAD Engine Mode</label>
             <select id="vector-mode" class="select-input">
-              <option value="centerline" selected>Centerline Skeleton (Single CAD Lines)</option>
+              <option value="smart_cad" selected>Smart CAD (Straight Lines & Ortho Walls)</option>
+              <option value="centerline">Centerline Skeleton (Raw strokes)</option>
               <option value="contours">Boundary Contours (Closed Polygons)</option>
-              <option value="both">Dual Layer (Centerlines + Contours)</option>
+              <option value="both">Dual Layer (Lines + Contours)</option>
             </select>
+          </div>
+
+          <div class="control-group-toggle">
+            <label class="toggle-label" for="ortho-toggle">
+              <span>Ortho Mode (90°/0° Straight Walls)</span>
+              <small>Snaps slanted scan lines into true straight CAD walls</small>
+            </label>
+            <input type="checkbox" id="ortho-toggle" class="toggle-switch" checked />
           </div>
 
           <div class="control-group">
             <div class="label-row">
-              <label for="tolerance-slider">Line Simplification (RDP)</label>
+              <label for="min-len-slider">Minimum Line Length</label>
+              <span id="min-len-val" class="param-val">12 px</span>
+            </div>
+            <input type="range" id="min-len-slider" min="4" max="40" value="12" class="slider" />
+            <span class="control-help">Filters out tiny fragmented jagged strokes.</span>
+          </div>
+
+          <div class="control-group">
+            <div class="label-row">
+              <label for="corner-snap-slider">Corner & Wall Snapping</label>
+              <span id="corner-snap-val" class="param-val">8 px</span>
+            </div>
+            <input type="range" id="corner-snap-slider" min="2" max="25" value="8" class="slider" />
+            <span class="control-help">Snaps L-corners and T-junctions to make clean watertight walls.</span>
+          </div>
+
+          <div class="control-group">
+            <div class="label-row">
+              <label for="tolerance-slider">Polyline Simplification</label>
               <span id="tolerance-val" class="param-val">1.5</span>
             </div>
             <input type="range" id="tolerance-slider" min="0.2" max="5.0" step="0.1" value="1.5" class="slider" />
-            <span class="control-help">Higher values reduce CAD vertex count for cleaner lines.</span>
           </div>
 
           <div class="control-group">
@@ -153,7 +179,7 @@
         <div class="panel-section">
           <button id="process-btn" class="btn btn-primary btn-block">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            Convert to CAD
+            Re-Generate Clean CAD
           </button>
         </div>
       </aside>
@@ -162,7 +188,7 @@
       <section class="viewport-panel">
         <div class="viewport-header">
           <div class="view-tabs">
-            <button class="tab-btn active" data-tab="vector">CAD Vector Preview</button>
+            <button class="tab-btn active" data-tab="vector">Clean CAD Vector Preview</button>
             <button class="tab-btn" data-tab="cleaned">Cleaned Mask</button>
             <button class="tab-btn" data-tab="original">Original Image</button>
             <button class="tab-btn" data-tab="split">Side-by-Side Compare</button>
@@ -193,7 +219,7 @@
           <!-- Processing Overlay -->
           <div id="loading-overlay" class="loading-overlay hidden">
             <div class="spinner"></div>
-            <p id="loading-text">Denoising and tracing CAD vectors...</p>
+            <p id="loading-text">Regularizing geometry and generating clean CAD lines...</p>
           </div>
 
           <!-- Views -->

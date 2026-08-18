@@ -9,8 +9,7 @@ from ezdxf import units
 class CadExporter:
     """
     Exports vectorized geometric entities to standard AutoCAD DXF and DWG formats.
-    Includes coordinate space conversion (Y-inversion from image space to CAD space)
-    and structured layering.
+    Generates native AutoCAD LINE and LWPOLYLINE entities organized by layers.
     """
 
     @staticmethod
@@ -22,22 +21,23 @@ class CadExporter:
         scale: float = 1.0
     ) -> ezdxf.document.Drawing:
         """
-        Constructs an ezdxf Drawing document with organized layers and entities.
+        Constructs an ezdxf Drawing document with organized layers and native CAD entities.
         """
         doc = ezdxf.new(dxfversion=dxf_version, setup=True)
         doc.units = units.MM  # Default metric millimeters
         
-        # Configure modelspace
         msp = doc.modelspace()
 
         # Create structured CAD layers with standard AutoCAD ACI colors
-        # Color 3 = Green, Color 4 = Cyan, Color 1 = Red, Color 7 = White
+        # Color 7 = White/Black, Color 3 = Green, Color 4 = Cyan, Color 2 = Yellow, Color 1 = Red
+        if "WALLS_LINES" not in doc.layers:
+            doc.layers.add(name="WALLS_LINES", color=7, linetype="CONTINUOUS")
         if "CENTERLINES" not in doc.layers:
             doc.layers.add(name="CENTERLINES", color=3, linetype="CONTINUOUS")
         if "CONTOURS" not in doc.layers:
             doc.layers.add(name="CONTOURS", color=4, linetype="CONTINUOUS")
-        if "BOUNDARY" not in doc.layers:
-            doc.layers.add(name="BOUNDARY", color=1, linetype="CONTINUOUS")
+        if "FIXTURES" not in doc.layers:
+            doc.layers.add(name="FIXTURES", color=2, linetype="CONTINUOUS")
 
         # Iterate over vectorized entities
         for ent in entities:
@@ -45,20 +45,34 @@ class CadExporter:
             if len(raw_pts) < 2:
                 continue
 
-            # Convert from image coordinates (0,0 at top-left, Y downwards)
-            # to CAD Cartesian coordinates (0,0 at bottom-left, Y upwards)
+            # Coordinate transformation: pixel (Y-down) to CAD (Y-up)
             cad_pts = [(p[0] * scale, (img_height - p[1]) * scale) for p in raw_pts]
             
-            ent_type = ent.get("type", "centerline")
+            ent_type = ent.get("type", "line")
             is_closed = ent.get("is_closed", False)
-            layer_name = "CONTOURS" if ent_type == "contour" else "CENTERLINES"
 
-            # Add lightweight polyline to modelspace
-            msp.add_lwpolyline(
-                cad_pts,
-                close=is_closed,
-                dxfattribs={"layer": layer_name}
-            )
+            if ent_type == "line" and len(cad_pts) == 2:
+                # Add native AutoCAD LINE entity - cleanly editable, selectable, and trimmable
+                msp.add_line(
+                    start=cad_pts[0],
+                    end=cad_pts[1],
+                    dxfattribs={"layer": "WALLS_LINES"}
+                )
+            elif ent_type == "contour":
+                # Add closed or open LWPOLYLINE for shapes
+                layer_name = "CONTOURS" if ent.get("area", 0) > 100 else "FIXTURES"
+                msp.add_lwpolyline(
+                    cad_pts,
+                    close=is_closed,
+                    dxfattribs={"layer": layer_name}
+                )
+            else:
+                # Centerline or multi-point polyline
+                msp.add_lwpolyline(
+                    cad_pts,
+                    close=is_closed,
+                    dxfattribs={"layer": "CENTERLINES"}
+                )
 
         # Set drawing limits to image dimensions
         doc.header["$LIMMIN"] = (0.0, 0.0)
@@ -98,9 +112,8 @@ class CadExporter:
     def try_convert_to_dwg(dxf_filepath: str, output_dwg_filepath: str) -> bool:
         """
         Attempts to convert DXF to binary DWG using external tools (ODA File Converter / LibreCAD)
-        if available in the environment. If not present, returns False so application can serve DXF.
+        if available in the environment.
         """
-        # Check for ODA File Converter in system PATH or common paths
         oda_executables = [
             "ODAFileConverter",
             "ODAFileConverter.exe",
@@ -119,7 +132,6 @@ class CadExporter:
                 input_dir = str(Path(dxf_filepath).parent)
                 output_dir = str(Path(output_dwg_filepath).parent)
                 input_filename = Path(dxf_filepath).name
-                # ODA command: ODAFileConverter <input_dir> <output_dir> <out_version> <out_type> <recurse> <audit> [filter]
                 cmd = [oda_bin, input_dir, output_dir, "ACAD2018", "DWG", "0", "1", input_filename]
                 subprocess.run(cmd, check=True, timeout=30)
                 expected_dwg = Path(output_dir) / (Path(dxf_filepath).stem + ".dwg")

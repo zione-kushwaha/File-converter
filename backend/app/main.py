@@ -15,19 +15,19 @@ from app.config import (
     UPLOAD_DIR, OUTPUT_DIR, FRONTEND_DIR, ALLOWED_EXTENSIONS,
     DEFAULT_DENOISE_STRENGTH, DEFAULT_THRESHOLD_MODE, DEFAULT_MANUAL_THRESHOLD,
     DEFAULT_INVERT, DEFAULT_MIN_CONTOUR_AREA, DEFAULT_APPROX_TOLERANCE,
-    DEFAULT_VECTOR_MODE
+    DEFAULT_VECTOR_MODE, DEFAULT_ORTHO_SNAP, DEFAULT_MIN_LINE_LEN,
+    DEFAULT_CORNER_SNAP_RADIUS
 )
 from app.services.image_cleaner import ImageCleaner
 from app.services.vectorizer import Vectorizer
 from app.services.cad_exporter import CadExporter
 
 app = FastAPI(
-    title="Image to CAD (DWG/DXF) Converter API",
-    description="Vectorize images, blueprints, and drawings to AutoCAD DXF/DWG with noise removal",
-    version="1.0.0"
+    title="VectorCAD Studio API",
+    description="Vectorize images and blueprints to clean AutoCAD DXF/DWG with noise removal and geometric regularization",
+    version="1.1.0"
 )
 
-# Enable CORS for cross-origin frontend support
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,7 +36,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory / cache storage for recent conversion jobs
 conversion_cache = {}
 
 @app.get("/api/health")
@@ -44,8 +43,8 @@ async def health_check():
     """Health check endpoint for Docker and cloud monitoring"""
     return {
         "status": "healthy",
-        "service": "image-to-cad-converter",
-        "version": "1.0.0"
+        "service": "vectorcad-converter",
+        "version": "1.1.0"
     }
 
 @app.post("/api/process")
@@ -58,13 +57,14 @@ async def process_image_endpoint(
     speckle_size: int = Form(DEFAULT_MIN_CONTOUR_AREA),
     approx_tolerance: float = Form(DEFAULT_APPROX_TOLERANCE),
     vector_mode: str = Form(DEFAULT_VECTOR_MODE),
+    ortho_snap: bool = Form(DEFAULT_ORTHO_SNAP),
+    min_line_len: float = Form(DEFAULT_MIN_LINE_LEN),
+    corner_snap_radius: float = Form(DEFAULT_CORNER_SNAP_RADIUS),
     scale: float = Form(1.0)
 ):
     """
-    Process image with custom noise removal and vectorization parameters.
-    Returns cleaned image previews, SVG vector preview, processing stats, and job ID.
+    Process image with custom noise removal and geometric CAD regularization parameters.
     """
-    # Validate extension
     file_ext = Path(file.filename or "").suffix.lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -91,24 +91,28 @@ async def process_image_endpoint(
         w = clean_stats["original_width"]
         h = clean_stats["original_height"]
 
-        # Step 2: Vectorize geometry
+        # Step 2: Vectorize geometry with Smart CAD regularization
         entities, vec_stats = Vectorizer.vectorize(
             cleaned_mask=cleaned_mask,
             skeleton_mask=skeleton_mask,
             mode=vector_mode,
-            approx_tolerance=approx_tolerance
+            approx_tolerance=approx_tolerance,
+            ortho_snap=ortho_snap,
+            min_line_len=min_line_len,
+            corner_snap_radius=corner_snap_radius
         )
 
         # Step 3: Generate SVG preview
         svg_preview = Vectorizer.generate_svg_preview(entities, w, h)
 
-        # Step 4: Encode preview images as base64
+        # Step 4: Encode preview image as base64
         cleaned_png_bytes = ImageCleaner.encode_image_png(cleaned_mask)
         cleaned_b64 = f"data:image/png;base64,{base64.b64encode(cleaned_png_bytes).decode('utf-8')}"
 
-        # Step 5: Save DXF to disk for quick download
+        # Step 5: Save DXF with native CAD LINE entities
         job_id = str(uuid.uuid4())
-        dxf_filename = f"{Path(file.filename).stem or 'drawing'}_{job_id[:8]}.dxf"
+        safe_stem = "".join(c for c in Path(file.filename or "drawing").stem if c.isalnum() or c in ('_', '-')) or "drawing"
+        dxf_filename = f"{safe_stem}_{job_id[:8]}.dxf"
         dxf_path = str(OUTPUT_DIR / dxf_filename)
         
         CadExporter.export_dxf_file(
@@ -119,14 +123,13 @@ async def process_image_endpoint(
             scale=scale
         )
 
-        # Check DWG conversion
-        dwg_filename = f"{Path(file.filename).stem or 'drawing'}_{job_id[:8]}.dwg"
+        # Step 6: DWG check
+        dwg_filename = f"{safe_stem}_{job_id[:8]}.dwg"
         dwg_path = str(OUTPUT_DIR / dwg_filename)
         dwg_available = CadExporter.try_convert_to_dwg(dxf_path, dwg_path)
 
         total_time_ms = round((time.time() - t0) * 1000, 1)
 
-        # Store in cache
         conversion_cache[job_id] = {
             "dxf_path": dxf_path,
             "dxf_filename": dxf_filename,
@@ -177,6 +180,5 @@ async def download_cad_file(job_id: str, format_type: str):
     else:
         raise HTTPException(status_code=404, detail="Requested CAD file not found")
 
-# Serve frontend static assets
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
