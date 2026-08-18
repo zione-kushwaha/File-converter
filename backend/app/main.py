@@ -3,8 +3,9 @@ import io
 import time
 import uuid
 import base64
+import traceback
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
@@ -38,6 +39,16 @@ app.add_middleware(
 
 conversion_cache = {}
 
+def parse_bool(val: Union[bool, str, int]) -> bool:
+    """Safely converts form values to boolean"""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ("true", "1", "yes", "on")
+    if isinstance(val, (int, float)):
+        return bool(val)
+    return False
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint for Docker and cloud monitoring"""
@@ -50,42 +61,57 @@ async def health_check():
 @app.post("/api/process")
 async def process_image_endpoint(
     file: UploadFile = File(...),
-    denoise_strength: int = Form(DEFAULT_DENOISE_STRENGTH),
+    denoise_strength: str = Form(str(DEFAULT_DENOISE_STRENGTH)),
     threshold_mode: str = Form(DEFAULT_THRESHOLD_MODE),
-    manual_threshold: int = Form(DEFAULT_MANUAL_THRESHOLD),
-    invert: bool = Form(DEFAULT_INVERT),
-    speckle_size: int = Form(DEFAULT_MIN_CONTOUR_AREA),
-    approx_tolerance: float = Form(DEFAULT_APPROX_TOLERANCE),
+    manual_threshold: str = Form(str(DEFAULT_MANUAL_THRESHOLD)),
+    invert: str = Form("false"),
+    speckle_size: str = Form(str(DEFAULT_MIN_CONTOUR_AREA)),
+    approx_tolerance: str = Form(str(DEFAULT_APPROX_TOLERANCE)),
     vector_mode: str = Form(DEFAULT_VECTOR_MODE),
-    ortho_snap: bool = Form(DEFAULT_ORTHO_SNAP),
-    min_line_len: float = Form(DEFAULT_MIN_LINE_LEN),
-    corner_snap_radius: float = Form(DEFAULT_CORNER_SNAP_RADIUS),
-    scale: float = Form(1.0)
+    ortho_snap: str = Form("true"),
+    min_line_len: str = Form(str(DEFAULT_MIN_LINE_LEN)),
+    corner_snap_radius: str = Form(str(DEFAULT_CORNER_SNAP_RADIUS)),
+    scale: str = Form("1.0")
 ):
     """
     Process image with custom noise removal and geometric CAD regularization parameters.
     """
     file_ext = Path(file.filename or "").suffix.lower()
     if file_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail=f"Unsupported file format '{file_ext}'. Allowed formats: {', '.join(ALLOWED_EXTENSIONS)}"
+            content={"detail": f"Unsupported file format '{file_ext}'. Allowed formats: {', '.join(ALLOWED_EXTENSIONS)}"}
         )
 
     t0 = time.time()
-    image_bytes = await file.read()
+    try:
+        image_bytes = await file.read()
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"detail": f"Failed to read uploaded file: {str(e)}"})
+
     if not image_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        return JSONResponse(status_code=400, content={"detail": "Uploaded file is empty."})
 
     try:
+        # Parse inputs safely
+        parsed_denoise = int(float(denoise_strength))
+        parsed_manual_thresh = int(float(manual_threshold))
+        parsed_invert = parse_bool(invert)
+        parsed_speckle = int(float(speckle_size))
+        parsed_approx = float(approx_tolerance)
+        parsed_ortho = parse_bool(ortho_snap)
+        parsed_min_line = float(min_line_len)
+        parsed_corner_snap = float(corner_snap_radius)
+        parsed_scale = float(scale)
+
         # Step 1: Denoise & Clean Image
         cleaned_mask, skeleton_mask, clean_stats = ImageCleaner.preprocess_image(
             image_bytes=image_bytes,
-            denoise_strength=denoise_strength,
+            denoise_strength=parsed_denoise,
             threshold_mode=threshold_mode,
-            manual_threshold=manual_threshold,
-            invert=invert,
-            speckle_size=speckle_size
+            manual_threshold=parsed_manual_thresh,
+            invert=parsed_invert,
+            speckle_size=parsed_speckle
         )
 
         w = clean_stats["original_width"]
@@ -96,10 +122,10 @@ async def process_image_endpoint(
             cleaned_mask=cleaned_mask,
             skeleton_mask=skeleton_mask,
             mode=vector_mode,
-            approx_tolerance=approx_tolerance,
-            ortho_snap=ortho_snap,
-            min_line_len=min_line_len,
-            corner_snap_radius=corner_snap_radius
+            approx_tolerance=parsed_approx,
+            ortho_snap=parsed_ortho,
+            min_line_len=parsed_min_line,
+            corner_snap_radius=parsed_corner_snap
         )
 
         # Step 3: Generate SVG preview
@@ -120,7 +146,7 @@ async def process_image_endpoint(
             img_width=w,
             img_height=h,
             output_filepath=dxf_path,
-            scale=scale
+            scale=parsed_scale
         )
 
         # Step 6: DWG check
@@ -138,7 +164,7 @@ async def process_image_endpoint(
             "created_at": time.time()
         }
 
-        return {
+        return JSONResponse(content={
             "success": True,
             "job_id": job_id,
             "dxf_filename": dxf_filename,
@@ -151,10 +177,14 @@ async def process_image_endpoint(
                 **vec_stats,
                 "processing_time_ms": total_time_ms
             }
-        }
+        })
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Image conversion failed: {str(e)}")
+        print("Processing error traceback:", traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Image processing error: {str(e)}"}
+        )
 
 @app.get("/api/download/{job_id}/{format_type}")
 async def download_cad_file(job_id: str, format_type: str):

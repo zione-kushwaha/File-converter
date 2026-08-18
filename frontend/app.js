@@ -262,12 +262,18 @@ document.addEventListener('DOMContentLoaded', () => {
         body: formData
       });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || 'Conversion failed');
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch (jsonErr) {
+        throw new Error(responseText || `Server returned HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.detail || 'Conversion failed on server');
+      }
+
       currentJobId = data.job_id;
 
       // Update Views
