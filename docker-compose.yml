@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  fileconverter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vectorcad-converter
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+    volumes:
+      - ./outputs:/app/outputs
+      - ./uploads:/app/uploads

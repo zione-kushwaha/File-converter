@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Convert images, blueprints, and sketches into clean AutoCAD DXF/DWG files with AI noise reduction and vectorization.">
+  <title>VectorCAD Studio - Image to DWG/DXF Converter with Noise Removal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>VectorCAD Studio</h1>
+          <span class="badge">AutoCAD DWG & DXF Engine</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="sample-btn" class="btn btn-secondary" title="Load sample architectural drawing">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Try Sample Blueprint
+        </button>
+        <a href="/docs" target="_blank" class="btn btn-ghost" title="FastAPI OpenAPI Documentation">API Docs</a>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="main-container">
+      <!-- Left Sidebar: Controls & Settings -->
+      <aside class="sidebar-panel">
+        <div class="panel-section">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            1. Source Image
+          </h2>
+          
+          <div id="dropzone" class="dropzone">
+            <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.bmp,.webp,.tiff,.tif" hidden />
+            <div class="dropzone-content">
+              <div class="upload-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+              </div>
+              <p class="drop-title">Drop your image here or <span class="browse-link">browse</span></p>
+              <p class="drop-hint">Supports PNG, JPG, Blueprint, Sketch, TIFF (up to 25MB)</p>
+            </div>
+          </div>
+          <div id="file-details" class="file-details hidden">
+            <div class="file-info-row">
+              <span id="filename-display" class="filename">drawing.png</span>
+              <button id="remove-file-btn" class="icon-btn" title="Remove file">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+            2. Noise Removal & Cleaning
+          </h2>
+
+          <div class="control-group">
+            <div class="label-row">
+              <label for="denoise-slider">Denoise & Smoothing</label>
+              <span id="denoise-val" class="param-val">10</span>
+            </div>
+            <input type="range" id="denoise-slider" min="0" max="30" value="10" class="slider" />
+            <span class="control-help">Filters scanner paper texture & compression artifacts.</span>
+          </div>
+
+          <div class="control-group">
+            <div class="label-row">
+              <label for="threshold-mode">Binarization Method</label>
+            </div>
+            <select id="threshold-mode" class="select-input">
+              <option value="adaptive" selected>Adaptive Gaussian (Best for scans & uneven lighting)</option>
+              <option value="otsu">Otsu Automatic Global</option>
+              <option value="manual">Manual Threshold</option>
+            </select>
+          </div>
+
+          <div id="manual-thresh-group" class="control-group hidden">
+            <div class="label-row">
+              <label for="manual-thresh-slider">Threshold Level</label>
+              <span id="manual-thresh-val" class="param-val">128</span>
+            </div>
+            <input type="range" id="manual-thresh-slider" min="1" max="254" value="128" class="slider" />
+          </div>
+
+          <div class="control-group">
+            <div class="label-row">
+              <label for="speckle-slider">Despeckle Filter (Dust Removal)</label>
+              <span id="speckle-val" class="param-val">15 px</span>
+            </div>
+            <input type="range" id="speckle-slider" min="0" max="100" value="15" class="slider" />
+            <span class="control-help">Discards isolated noise blobs smaller than this area.</span>
+          </div>
+
+          <div class="control-group-toggle">
+            <label class="toggle-label" for="invert-toggle">
+              <span>Invert Background</span>
+              <small>Enable for blueprints (white lines on dark bg)</small>
+            </label>
+            <input type="checkbox" id="invert-toggle" class="toggle-switch" />
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h2 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+            3. CAD Vectorization
+          </h2>
+
+          <div class="control-group">
+            <label for="vector-mode">CAD Tracing Mode</label>
+            <select id="vector-mode" class="select-input">
+              <option value="centerline" selected>Centerline Skeleton (Single CAD Lines)</option>
+              <option value="contours">Boundary Contours (Closed Polygons)</option>
+              <option value="both">Dual Layer (Centerlines + Contours)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <div class="label-row">
+              <label for="tolerance-slider">Line Simplification (RDP)</label>
+              <span id="tolerance-val" class="param-val">1.5</span>
+            </div>
+            <input type="range" id="tolerance-slider" min="0.2" max="5.0" step="0.1" value="1.5" class="slider" />
+            <span class="control-help">Higher values reduce CAD vertex count for cleaner lines.</span>
+          </div>
+
+          <div class="control-group">
+            <label for="scale-select">CAD Scale Multiplier</label>
+            <select id="scale-select" class="select-input">
+              <option value="1.0" selected>1:1 (Millimeters)</option>
+              <option value="0.1">0.1x (Centimeters to MM)</option>
+              <option value="25.4">Inches to MM (x25.4)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <button id="process-btn" class="btn btn-primary btn-block">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Convert to CAD
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center / Right: Interactive Visualizer Canvas -->
+      <section class="viewport-panel">
+        <div class="viewport-header">
+          <div class="view-tabs">
+            <button class="tab-btn active" data-tab="vector">CAD Vector Preview</button>
+            <button class="tab-btn" data-tab="cleaned">Cleaned Mask</button>
+            <button class="tab-btn" data-tab="original">Original Image</button>
+            <button class="tab-btn" data-tab="split">Side-by-Side Compare</button>
+          </div>
+          <div class="viewport-tools">
+            <button id="zoom-in-btn" class="tool-btn" title="Zoom In">+</button>
+            <button id="zoom-reset-btn" class="tool-btn" title="Reset Zoom">100%</button>
+            <button id="zoom-out-btn" class="tool-btn" title="Zoom Out">-</button>
+          </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div id="viewport-canvas-container" class="canvas-container">
+          <!-- Placeholder State -->
+          <div id="empty-state" class="empty-state">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+              </svg>
+            </div>
+            <h3>No Drawing Loaded</h3>
+            <p>Upload a technical sketch, architectural floor plan, or blueprint to start vectorizing.</p>
+            <button id="load-sample-hero" class="btn btn-secondary">Load Sample Drawing</button>
+          </div>
+
+          <!-- Processing Overlay -->
+          <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="spinner"></div>
+            <p id="loading-text">Denoising and tracing CAD vectors...</p>
+          </div>
+
+          <!-- Views -->
+          <div id="view-vector" class="view-content active">
+            <div id="svg-render-target" class="zoom-target"></div>
+          </div>
+
+          <div id="view-cleaned" class="view-content hidden">
+            <img id="cleaned-img-target" class="zoom-target preview-img" alt="Cleaned raster mask" />
+          </div>
+
+          <div id="view-original" class="view-content hidden">
+            <img id="original-img-target" class="zoom-target preview-img" alt="Original source" />
+          </div>
+
+          <div id="view-split" class="view-content hidden">
+            <div class="split-wrapper">
+              <div class="split-side">
+                <span class="split-badge">Original (Raw Input)</span>
+                <img id="split-original-img" class="split-img" alt="Original" />
+              </div>
+              <div class="split-divider"></div>
+              <div class="split-side">
+                <span class="split-badge">Cleaned Vector (Denoised)</span>
+                <div id="split-svg-target" class="split-svg"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Action & Stats Bar -->
+        <footer class="viewport-footer">
+          <div class="stats-summary" id="stats-summary">
+            <div class="stat-item"><span class="stat-label">Status:</span> <span id="stat-status" class="stat-val">Ready</span></div>
+            <div class="stat-item"><span class="stat-label">Speckles Filtered:</span> <span id="stat-speckles" class="stat-val">-</span></div>
+            <div class="stat-item"><span class="stat-label">CAD Entities:</span> <span id="stat-entities" class="stat-val">-</span></div>
+            <div class="stat-item"><span class="stat-label">Nodes:</span> <span id="stat-nodes" class="stat-val">-</span></div>
+            <div class="stat-item"><span class="stat-label">Time:</span> <span id="stat-time" class="stat-val">-</span></div>
+          </div>
+
+          <div class="export-actions">
+            <button id="download-dxf-btn" class="btn btn-export btn-dxf" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download DXF (AutoCAD)
+            </button>
+            <button id="download-dwg-btn" class="btn btn-export btn-dwg" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download DWG
+            </button>
+          </div>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
